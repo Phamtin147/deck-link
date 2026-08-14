@@ -174,29 +174,31 @@ impl VideoStreamer {
 
         let mut child = if is_wayland && has_wf_recorder && !self.config.test_pattern {
             let output_target = "Virtual-1";
-            info!("Launching native Wayland screencopy streamer: wf-recorder for output '{}' (NVENC H.264 @ {} FPS, {} kbps)", output_target, self.config.fps, self.config.bitrate_kbps);
-            Command::new("wf-recorder")
-                .arg("-o")
-                .arg(output_target)
-                .arg("--codec=h264_nvenc")
-                .arg("-r")
-                .arg(self.config.fps.to_string())
-                .arg("-p")
-                .arg("preset=p1")
-                .arg("-p")
-                .arg("tune=ull")
-                .arg("-p")
-                .arg("rc=vbr")
-                .arg("-p")
-                .arg("pix_fmt=yuv420p")
-                .arg("-p")
-                .arg(format!("b={}k", self.config.bitrate_kbps))
-                .arg("--muxer=h264")
-                .arg("-f")
-                .arg("pipe:1")
-                .stdout(Stdio::piped())
-                .stderr(Stdio::null())
-                .spawn()?
+            let has_intel_vaapi = std::path::Path::new("/dev/dri/renderD128").exists();
+
+            let mut cmd = Command::new("wf-recorder");
+            cmd.arg("-o").arg(output_target);
+
+            if has_intel_vaapi {
+                info!("Launching Intel VA-API Low-Power Zero-Copy Hardware Streamer (Device: /dev/dri/renderD128 @ {} FPS, {} kbps)", self.config.fps, self.config.bitrate_kbps);
+                cmd.arg("-d").arg("/dev/dri/renderD128")
+                   .arg("-c").arg("h264_vaapi");
+            } else {
+                info!("Launching NVIDIA NVENC Hardware Streamer (output: '{}' @ {} FPS, {} kbps)", output_target, self.config.fps, self.config.bitrate_kbps);
+                cmd.arg("-c").arg("h264_nvenc")
+                   .arg("-p").arg("preset=p1")
+                   .arg("-p").arg("tune=ull")
+                   .arg("-p").arg("rc=vbr")
+                   .arg("-p").arg("pix_fmt=yuv420p");
+            }
+
+            cmd.arg("-r").arg(self.config.fps.to_string())
+               .arg("-p").arg(format!("b={}k", self.config.bitrate_kbps))
+               .arg("--muxer=h264")
+               .arg("-f").arg("pipe:1")
+               .stdout(Stdio::piped())
+               .stderr(Stdio::null())
+               .spawn()?
         } else {
             let args = self.build_pipeline_args();
             info!("Launching GStreamer pipeline process: gst-launch-1.0 {}", args.join(" "));
