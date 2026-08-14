@@ -34,7 +34,7 @@ class LowLatencyDecoder(
         try {
             val format = MediaFormat.createVideoFormat(MIME_TYPE, width, height).apply {
                 setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
-                setInteger(MediaFormat.KEY_KEY_FRAME_INTERVAL, 1)
+                setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
                 
                 // Low latency mode flag for Android 11+ (API 30+)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
