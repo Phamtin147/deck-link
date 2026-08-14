@@ -154,3 +154,38 @@ impl TouchEvent {
         })
     }
 }
+
+pub const EVENT_TYPE_CONFIG: u8 = 0x03; // Client Device Config Handshake
+pub const CONFIG_PACKET_SIZE: usize = 15;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClientConfigEvent {
+    pub width: u32,
+    pub height: u32,
+    pub fps: u32,
+    pub density: u16,
+}
+
+impl ClientConfigEvent {
+    pub fn decode(buf: &[u8; CONFIG_PACKET_SIZE]) -> io::Result<Self> {
+        let event_type = buf[0];
+        if event_type != EVENT_TYPE_CONFIG {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Invalid config event type: 0x{:02X}", event_type),
+            ));
+        }
+
+        let width = BigEndian::read_u32(&buf[1..5]);
+        let height = BigEndian::read_u32(&buf[5..9]);
+        let fps = BigEndian::read_u16(&buf[9..11]) as u32;
+        let density = BigEndian::read_u16(&buf[11..13]);
+
+        Ok(Self {
+            width: width.max(320),
+            height: height.max(240),
+            fps: fps.clamp(30, 240),
+            density,
+        })
+    }
+}

@@ -11,8 +11,10 @@ android {
         applicationId = "com.desklink.client"
         minSdk = 26 // Android 8.0 Oreo (SRS Mandate)
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+
+        val buildNumber = providers.environmentVariable("GITHUB_RUN_NUMBER").orElse("1").get()
+        versionCode = buildNumber.toIntOrNull() ?: 1
+        versionName = "1.0.$buildNumber"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

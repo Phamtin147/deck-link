@@ -14,6 +14,10 @@ import java.util.concurrent.LinkedBlockingQueue
 class DeskLinkClient(
     private val host: String = "127.0.0.1",
     private val port: Int = 9999,
+    private val deviceWidth: Int = 1920,
+    private val deviceHeight: Int = 1080,
+    private val deviceFps: Int = 60,
+    private val deviceDensity: Int = 160,
     private val onConnectionStateChanged: (State) -> Unit,
     private val onVideoNaluReceived: (nalu: ByteArray, ptsUs: Long) -> Unit
 ) {
@@ -53,10 +57,16 @@ class DeskLinkClient(
 
                     activeSocket = socket
                     onConnectionStateChanged(State.CONNECTED)
-                    Log.i(TAG, "Connected to DeskLink Host Daemon!")
+                    Log.i(TAG, "Connected to DeskLink Host Daemon! Sending device config: ${deviceWidth}x${deviceHeight}@${deviceFps}fps")
 
                     val inputStream = DataInputStream(BufferedInputStream(socket.getInputStream(), 131072))
                     val outputStream = socket.getOutputStream()
+
+                    // Send initial handshake config packet (device native resolution & aspect ratio)
+                    val configBuf = ByteArray(DeskLinkProtocol.CONFIG_PACKET_SIZE)
+                    DeskLinkProtocol.encodeConfigPacket(deviceWidth, deviceHeight, deviceFps, deviceDensity, configBuf)
+                    outputStream.write(configBuf)
+                    outputStream.flush()
 
                     // Launch touch sender job
                     val senderJob = launch {

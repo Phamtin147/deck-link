@@ -91,8 +91,9 @@ impl DeskLinkServer {
                     let streamer_mutex = self.streamer.clone();
                     let compositor_mutex = self.compositor.clone();
 
+                    let compositor_clone = self.compositor.clone();
                     tokio::spawn(async move {
-                        Self::handle_client(socket, peer_addr, video_rx, touch_tx).await;
+                        Self::handle_client(socket, peer_addr, video_rx, touch_tx, compositor_clone).await;
                         let count = active_clients.fetch_sub(1, Ordering::SeqCst) - 1;
                         info!("DeskLink Client {} disconnected. Active clients: {}", peer_addr, count);
                         if count == 0 {
@@ -129,6 +130,7 @@ impl DeskLinkServer {
         peer_addr: SocketAddr,
         mut video_rx: broadcast::Receiver<Vec<u8>>,
         touch_tx: mpsc::Sender<TouchEvent>,
+        compositor: Arc<Mutex<CompositorManager>>,
     ) {
         let (mut reader, mut writer) = socket.into_split();
 
@@ -142,21 +144,38 @@ impl DeskLinkServer {
             }
         });
 
-        // Task 2: Receive Touch packets (Client -> Host)
+        // Task 2: Receive Touch and Config packets (Client -> Host)
+        let compositor_clone = compositor.clone();
         let touch_task = tokio::spawn(async move {
             let mut buf = [0u8; TOUCH_PACKET_SIZE];
             loop {
                 match reader.read_exact(&mut buf).await {
                     Ok(_) => {
-                        match TouchEvent::decode(&buf) {
-                            Ok(event) => {
-                                if let Err(e) = touch_tx.send(event).await {
-                                    warn!("Failed to dispatch touch event: {:?}", e);
-                                    break;
-                                }
+                        if buf[0] == crate::protocol::EVENT_TYPE_CONFIG {
+                            if let Ok(config) = crate::protocol::ClientConfigEvent::decode(&buf) {
+                                info!(
+                                    "Received device display handshake: {}x{} @ {}Hz (Aspect Ratio: {:.2}:1)",
+                                    config.width,
+                                    config.height,
+                                    config.fps,
+                                    config.width as f32 / config.height as f32
+                                );
+                                compositor_clone
+                                    .lock()
+                                    .await
+                                    .create_virtual_output(config.width, config.height, config.fps);
                             }
-                            Err(e) => {
-                                warn!("Malformed touch packet received from {}: {:?}", peer_addr, e);
+                        } else {
+                            match TouchEvent::decode(&buf) {
+                                Ok(event) => {
+                                    if let Err(e) = touch_tx.send(event).await {
+                                        warn!("Failed to dispatch touch event: {:?}", e);
+                                        break;
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!("Malformed packet received from {}: {:?}", peer_addr, e);
+                                }
                             }
                         }
                     }

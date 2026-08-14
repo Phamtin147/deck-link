@@ -47,6 +47,14 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
             client?.sendTouchPacket(packet)
         }
         binding.surfaceView.setOnTouchListener(touchHandler)
+
+        binding.btnToggleHud.setOnClickListener {
+            binding.statsHud.visibility = if (binding.statsHud.visibility == View.VISIBLE) {
+                View.GONE
+            } else {
+                View.VISIBLE
+            }
+        }
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {
@@ -65,6 +73,13 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
         val displayMetrics = resources.displayMetrics
         val streamWidth = maxOf(displayMetrics.widthPixels, displayMetrics.heightPixels)
         val streamHeight = minOf(displayMetrics.widthPixels, displayMetrics.heightPixels)
+        val refreshRate = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            display?.mode?.refreshRate?.toInt() ?: 60
+        } else {
+            @Suppress("DEPRECATION")
+            windowManager.defaultDisplay.refreshRate.toInt()
+        }
+        val densityDpi = displayMetrics.densityDpi
 
         decoder = LowLatencyDecoder(streamWidth, streamHeight) { _ ->
             // Optional latency telemetry callback
@@ -74,6 +89,10 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
         client = DeskLinkClient(
             host = "127.0.0.1",
             port = 9999,
+            deviceWidth = streamWidth,
+            deviceHeight = streamHeight,
+            deviceFps = refreshRate,
+            deviceDensity = densityDpi,
             onConnectionStateChanged = { state ->
                 runOnUiThread {
                     when (state) {
@@ -81,15 +100,18 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
                             binding.statusOverlay.visibility = View.VISIBLE
                             binding.txtStatusDesc.text = getString(R.string.connecting)
                             binding.statsHud.visibility = View.GONE
+                            binding.btnToggleHud.visibility = View.GONE
                         }
                         DeskLinkClient.State.CONNECTED -> {
                             binding.statusOverlay.visibility = View.GONE
-                            binding.statsHud.visibility = View.VISIBLE
+                            binding.statsHud.visibility = View.GONE // Hidden by default for clean secondary display
+                            binding.btnToggleHud.visibility = View.VISIBLE
                         }
                         DeskLinkClient.State.DISCONNECTED -> {
                             binding.statusOverlay.visibility = View.VISIBLE
                             binding.txtStatusDesc.text = getString(R.string.waiting_usb)
                             binding.statsHud.visibility = View.GONE
+                            binding.btnToggleHud.visibility = View.GONE
                         }
                     }
                 }

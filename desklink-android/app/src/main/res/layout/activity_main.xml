@@ -72,8 +72,7 @@
         android:background="#990B0F19"
         android:orientation="vertical"
         android:padding="8dp"
-        android:visibility="gone"
-        tools:visibility="visible">
+        android:visibility="gone">
 
         <TextView
             android:id="@+id/txtFps"
@@ -98,9 +97,24 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:fontFamily="monospace"
-            android:text="Bitrate: 15.0 Mbps"
+            android:text="Bitrate: 8.0 Mbps"
             android:textColor="@color/text_muted"
             android:textSize="11sp" />
     </LinearLayout>
+
+    <!-- Discreet HUD Toggle Button (Top-Right, Translucent) -->
+    <TextView
+        android:id="@+id/btnToggleHud"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_margin="8dp"
+        android:background="#44000000"
+        android:paddingHorizontal="8dp"
+        android:paddingVertical="4dp"
+        android:text="⚙ Stats"
+        android:textColor="#88FFFFFF"
+        android:textSize="10sp"
+        android:visibility="gone" />
 
 </FrameLayout>

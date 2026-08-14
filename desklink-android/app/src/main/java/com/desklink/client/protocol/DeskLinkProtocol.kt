@@ -7,9 +7,11 @@ object DeskLinkProtocol {
     const val MAGIC_BYTE: Byte = 0x44 // 'D'
     const val PAYLOAD_TYPE_VIDEO: Byte = 0x01
     const val EVENT_TYPE_TOUCH: Byte = 0x02
+    const val EVENT_TYPE_CONFIG: Byte = 0x03
 
     const val VIDEO_HEADER_SIZE = 14
     const val TOUCH_PACKET_SIZE = 15
+    const val CONFIG_PACKET_SIZE = 15
 
     const val TOUCH_ACTION_DOWN: Byte = 0x00
     const val TOUCH_ACTION_MOVE: Byte = 0x01
@@ -36,6 +38,38 @@ object DeskLinkProtocol {
         val ptsUs = buffer.long
 
         return VideoHeader(magic, payloadType, payloadLength, ptsUs)
+    }
+
+    fun encodeConfigPacket(
+        width: Int,
+        height: Int,
+        fps: Int,
+        densityDpi: Int,
+        targetBuf: ByteArray
+    ) {
+        targetBuf[0] = EVENT_TYPE_CONFIG
+        // Width (2 bytes or 4 bytes)
+        targetBuf[1] = (width ushr 24).toByte()
+        targetBuf[2] = (width ushr 16).toByte()
+        targetBuf[3] = (width ushr 8).toByte()
+        targetBuf[4] = width.toByte()
+
+        // Height (4 bytes)
+        targetBuf[5] = (height ushr 24).toByte()
+        targetBuf[6] = (height ushr 16).toByte()
+        targetBuf[7] = (height ushr 8).toByte()
+        targetBuf[8] = height.toByte()
+
+        // FPS (2 bytes)
+        targetBuf[9] = (fps ushr 8).toByte()
+        targetBuf[10] = fps.toByte()
+
+        // Density DPI (2 bytes)
+        targetBuf[11] = (densityDpi ushr 8).toByte()
+        targetBuf[12] = densityDpi.toByte()
+
+        targetBuf[13] = 0
+        targetBuf[14] = 0
     }
 
     fun encodeTouchEvent(
