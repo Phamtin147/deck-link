@@ -40,25 +40,25 @@ impl AdbManager {
             return false;
         }
 
-        info!("Configuring ADB forward rule: tcp:{} -> tcp:{}", self.port, self.port);
-        let forward_arg = format!("tcp:{}", self.port);
+        info!("Configuring ADB reverse rule: tcp:{} -> tcp:{}", self.port, self.port);
+        let reverse_arg = format!("tcp:{}", self.port);
 
         let output = Command::new("adb")
-            .args(["forward", &forward_arg, &forward_arg])
+            .args(["reverse", &reverse_arg, &reverse_arg])
             .output();
 
         match output {
             Ok(out) if out.status.success() => {
-                info!("ADB Port forwarding established successfully (Port {}).", self.port);
+                info!("ADB Port reverse established successfully (Port {}).", self.port);
                 true
             }
             Ok(out) => {
                 let err_msg = String::from_utf8_lossy(&out.stderr);
-                warn!("ADB forward command returned: {}", err_msg.trim());
+                warn!("ADB reverse command returned: {}", err_msg.trim());
                 false
             }
             Err(e) => {
-                warn!("Failed to execute 'adb forward': {}", e);
+                warn!("Failed to execute 'adb reverse': {}", e);
                 false
             }
         }
@@ -71,11 +71,11 @@ impl AdbManager {
 
         let port = self.port;
         tokio::spawn(async move {
-            let forward_arg = format!("tcp:{}", port);
+            let reverse_arg = format!("tcp:{}", port);
             loop {
                 sleep(Duration::from_secs(5)).await;
                 let _ = Command::new("adb")
-                    .args(["forward", &forward_arg, &forward_arg])
+                    .args(["reverse", &reverse_arg, &reverse_arg])
                     .output();
             }
         });

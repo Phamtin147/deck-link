@@ -70,7 +70,13 @@ impl CompositorManager {
                 }
             }
             CompositorType::Niri => {
-                info!("Niri Wayland environment detected. Display configured for PipeWire zero-copy stream ({}x{} @ {}Hz)", width, height, refresh_rate);
+                info!("Enabling Niri Virtual-1 output ({}x{} @ {}Hz)...", width, height, refresh_rate);
+                let _ = Command::new("niri")
+                    .args(["msg", "output", "Virtual-1", "on"])
+                    .output();
+                let _ = Command::new("niri")
+                    .args(["msg", "output", "Virtual-1", "mode", "1920x1080@60.000"])
+                    .output();
                 self.virtual_output_created = true;
                 true
             }
@@ -102,11 +108,27 @@ impl CompositorManager {
     }
 
     pub fn destroy_virtual_output(&mut self) {
-        if self.virtual_output_created && self.compositor_type == CompositorType::Hyprland {
-            info!("Removing Hyprland virtual output...");
-            let _ = Command::new("hyprctl")
-                .args(["output", "remove", "HEADLESS-1"])
-                .output();
+        if self.virtual_output_created {
+            match self.compositor_type {
+                CompositorType::Hyprland => {
+                    info!("Removing Hyprland virtual output...");
+                    let _ = Command::new("hyprctl")
+                        .args(["output", "remove", "HEADLESS-1"])
+                        .output();
+                }
+                CompositorType::Niri => {
+                    info!("Disabling Niri Virtual-1 output (client disconnected)...");
+                    let _ = Command::new("niri")
+                        .args(["msg", "output", "Virtual-1", "off"])
+                        .output();
+                }
+                CompositorType::X11 => {
+                    let _ = Command::new("xrandr")
+                        .args(["--output", "VIRTUAL-1", "--off"])
+                        .output();
+                }
+                _ => {}
+            }
         }
         self.virtual_output_created = false;
     }

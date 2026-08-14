@@ -105,6 +105,12 @@ impl VideoStreamer {
                 "videotestsrc pattern=smpte is-live=true ! video/x-raw,width={},height={},framerate={}/1",
                 self.config.width, self.config.height, self.config.fps
             )
+        } else if let Some((startx, starty, endx, endy)) = Self::detect_virtual_output_bounds() {
+            info!("Targeting Virtual Extended Monitor at region ({},{}) -> ({},{})", startx, starty, endx, endy);
+            format!(
+                "ximagesrc use-damage=0 startx={} starty={} endx={} endy={} ! video/x-raw,framerate={}/1 ! videoscale ! video/x-raw,width={},height={}",
+                startx, starty, endx, endy, self.config.fps, self.config.width, self.config.height
+            )
         } else {
             // Check if pipewiresrc or ximagesrc is available
             let has_pipewire = std::process::Command::new("gst-inspect-1.0")
@@ -134,16 +140,70 @@ impl VideoStreamer {
         full_pipeline.split_whitespace().map(|s| s.to_string()).collect()
     }
 
-    pub fn start(&mut self, sender: broadcast::Sender<Vec<u8>>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let args = self.build_pipeline_args();
-        info!("Launching GStreamer pipeline process: gst-launch-1.0 {}", args.join(" "));
+    fn detect_virtual_output_bounds() -> Option<(u32, u32, u32, u32)> {
+        if let Ok(out) = std::process::Command::new("xrandr").output() {
+            let text = String::from_utf8_lossy(&out.stdout);
+            for line in text.lines() {
+                if (line.starts_with("Virtual") || line.starts_with("HEADLESS") || line.contains("connected")) 
+                    && !line.contains("primary") 
+                    && line.contains("connected") 
+                    && !line.contains("disconnected") 
+                {
+                    for part in line.split_whitespace() {
+                        if let Some((geom, pos)) = part.split_once('+') {
+                            if let Some((w_str, h_str)) = geom.split_once('x') {
+                                if let (Ok(w), Ok(h)) = (w_str.parse::<u32>(), h_str.parse::<u32>()) {
+                                    if let Some((x_str, y_str)) = pos.split_once('+') {
+                                        if let (Ok(x), Ok(y)) = (x_str.parse::<u32>(), y_str.parse::<u32>()) {
+                                            return Some((x, y, x + w - 1, y + h - 1));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
 
-        let mut child = Command::new("gst-launch-1.0")
-            .arg("-q")
-            .args(&args)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
+    pub fn start(&mut self, sender: broadcast::Sender<Vec<u8>>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let is_wayland = std::env::var("WAYLAND_DISPLAY").is_ok();
+        let has_wf_recorder = crate::adb::check_binary_exists("wf-recorder");
+
+        let mut child = if is_wayland && has_wf_recorder && !self.config.test_pattern {
+            let output_target = "Virtual-1";
+            info!("Launching native Wayland screencopy streamer: wf-recorder for output '{}' (NVENC H.264 @ {} FPS)", output_target, self.config.fps);
+            Command::new("wf-recorder")
+                .arg("-o")
+                .arg(output_target)
+                .arg("--codec=h264_nvenc")
+                .arg("-r")
+                .arg(self.config.fps.to_string())
+                .arg("-p")
+                .arg("preset=p1")
+                .arg("-p")
+                .arg("tune=ull")
+                .arg("-p")
+                .arg(format!("b={}k", self.config.bitrate_kbps))
+                .arg("--muxer=h264")
+                .arg("-f")
+                .arg("pipe:1")
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .spawn()?
+        } else {
+            let args = self.build_pipeline_args();
+            info!("Launching GStreamer pipeline process: gst-launch-1.0 {}", args.join(" "));
+
+            Command::new("gst-launch-1.0")
+                .arg("-q")
+                .args(&args)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()?
+        };
 
         let mut stdout = child.stdout.take().ok_or("Failed to open child stdout")?;
         let is_running = self.is_running.clone();
@@ -156,7 +216,7 @@ impl VideoStreamer {
             while is_running.load(Ordering::SeqCst) {
                 match stdout.read(&mut read_buf).await {
                     Ok(0) => {
-                        warn!("GStreamer video stream EOF reached.");
+                        warn!("Video stream EOF reached.");
                         break;
                     }
                     Ok(n) => {

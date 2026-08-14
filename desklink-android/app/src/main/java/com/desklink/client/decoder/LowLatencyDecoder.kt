@@ -6,8 +6,7 @@ import android.media.MediaFormat
 import android.os.Build
 import android.util.Log
 import android.view.Surface
-import java.nio.ByteBuffer
-import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.ArrayDeque
 
 class LowLatencyDecoder(
     private val width: Int = 1920,
@@ -20,7 +19,9 @@ class LowLatencyDecoder(
     }
 
     private var mediaCodec: MediaCodec? = null
-    private val frameQueue = ConcurrentLinkedQueue<NaluFrame>()
+    private val availableInputIndices = ArrayDeque<Int>()
+    private val frameQueue = ArrayDeque<NaluFrame>()
+    private val lock = Any()
     private var isConfigured = false
     private var isRunning = false
 
@@ -51,25 +52,13 @@ class LowLatencyDecoder(
 
             codec.setCallback(object : MediaCodec.Callback() {
                 override fun onInputBufferAvailable(codec: MediaCodec, index: Int) {
-                    val frame = frameQueue.poll()
-                    if (frame == null) {
-                        return
-                    }
-
-                    try {
-                        val inputBuffer = codec.getInputBuffer(index) ?: return
-                        inputBuffer.clear()
-                        inputBuffer.put(frame.data)
-
-                        codec.queueInputBuffer(
-                            index,
-                            0,
-                            frame.data.size,
-                            frame.ptsUs,
-                            0
-                        )
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error queuing input buffer: ${e.message}")
+                    synchronized(lock) {
+                        if (frameQueue.isNotEmpty()) {
+                            val frame = frameQueue.removeFirst()
+                            feedBuffer(codec, index, frame.data, frame.ptsUs)
+                        } else {
+                            availableInputIndices.add(index)
+                        }
                     }
                 }
 
@@ -110,15 +99,41 @@ class LowLatencyDecoder(
         }
     }
 
+    private fun feedBuffer(codec: MediaCodec, index: Int, data: ByteArray, ptsUs: Long) {
+        try {
+            val inputBuffer = codec.getInputBuffer(index) ?: return
+            inputBuffer.clear()
+            inputBuffer.put(data)
+            codec.queueInputBuffer(index, 0, data.size, ptsUs, 0)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error queuing input buffer: ${e.message}")
+        }
+    }
+
     fun submitNalu(naluBytes: ByteArray, ptsUs: Long) {
         if (!isRunning) return
-        frameQueue.offer(NaluFrame(naluBytes, ptsUs))
+        synchronized(lock) {
+            val codec = mediaCodec ?: return
+            if (availableInputIndices.isNotEmpty()) {
+                val index = availableInputIndices.removeFirst()
+                feedBuffer(codec, index, naluBytes, ptsUs)
+            } else {
+                // Keep queue bound to prevent memory growth under extreme delay
+                if (frameQueue.size > 30) {
+                    frameQueue.removeFirst()
+                }
+                frameQueue.add(NaluFrame(naluBytes, ptsUs))
+            }
+        }
     }
 
     fun stop() {
         isRunning = false
         isConfigured = false
-        frameQueue.clear()
+        synchronized(lock) {
+            frameQueue.clear()
+            availableInputIndices.clear()
+        }
         try {
             mediaCodec?.stop()
             mediaCodec?.release()
