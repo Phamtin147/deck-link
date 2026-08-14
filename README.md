@@ -139,4 +139,4 @@ python3 scripts/manual_stress_test.py
 ---
 
 ## License
-Apache-2.0 © 2026 Pham Trung Tin (TinPT15)
+Apache-2.0 © 2026 Pham Trung Tin (Amtia)
