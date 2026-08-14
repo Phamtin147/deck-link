@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">DeskLink</string>
+    <string name="connecting">Connecting to Host Daemon (127.0.0.1:9999)...</string>
+    <string name="waiting_usb">Waiting for USB Connection / Host Daemon...</string>
+    <string name="connected">DeskLink Connected (Ultra-Low Latency Mode)</string>
+    <string name="disconnected">Disconnected from Host</string>
+</resources>

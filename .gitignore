@@ -1,0 +1,21 @@
+# Rust build artifacts
+target/
+**/*.rs.bk
+Cargo.lock
+
+# Gradle / Android build artifacts
+.gradle/
+build/
+app/build/
+*.apk
+*.aab
+*.dex
+*.class
+captures/
+.externalNativeBuild/
+.cxx/
+local.properties
+.idea/
+*.iml
+.DS_Store
+Thumbs.db

@@ -1,0 +1,15 @@
+[package]
+name = "desklink-daemon"
+version = "1.0.0"
+edition = "2021"
+authors = ["Pham Trung Tin <TinPT15>"]
+description = "DeskLink Ultra-Low Latency USB Secondary Display Host Daemon for Linux"
+
+[dependencies]
+tokio = { version = "1.51", features = ["full"] }
+byteorder = "1.5"
+clap = { version = "4.6", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+libc = "0.2"
+nix = { version = "0.29", features = ["ioctl", "fs", "time", "event"] }
