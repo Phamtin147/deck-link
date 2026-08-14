@@ -1,0 +1,68 @@
+name: Build DeskLink Android APK & Host Daemon
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Build Debug APK
+        run: |
+          cd desklink-android
+          gradle assembleDebug --no-daemon
+
+      - name: Upload Debug APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DeskLink-app-debug
+          path: desklink-android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+  build-host:
+    name: Build Linux Host Daemon
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstreamer-plugins-bad1.0-dev gstreamer1.0-plugins-good gstreamer1.0-plugins-bad
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run Tests
+        run: |
+          cargo test --manifest-path desklink-daemon/Cargo.toml
+
+      - name: Build Release Binary
+        run: |
+          cargo build --release --manifest-path desklink-daemon/Cargo.toml
+
+      - name: Upload Host Daemon Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: desklink-daemon-linux-x86_64
+          path: desklink-daemon/target/release/desklink-daemon
