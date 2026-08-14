@@ -70,19 +70,19 @@ impl CompositorManager {
                 }
             }
             CompositorType::Niri => {
-                info!("Enabling Niri Virtual-1 output ({}x{} @ {}Hz)...", width, height, refresh_rate);
+                let best_mode = Self::best_matching_mode(width, height);
+                info!("Enabling Niri Virtual-1 output with optimal mode '{}' (Target device: {}x{} @ {}Hz)...", best_mode, width, height, refresh_rate);
+
+                // Configure via wlr-randr (Standard Wayland protocol, reflected in wdisplays)
+                let _ = Command::new("wlr-randr")
+                    .args(["--output", "Virtual-1", "--on", "--mode", best_mode])
+                    .output();
+
+                // Also notify Niri IPC
                 let _ = Command::new("niri")
                     .args(["msg", "output", "Virtual-1", "on"])
                     .output();
-                let mode_name = format!("{}x{}@{}.000", width, height, refresh_rate);
-                let out = Command::new("niri")
-                    .args(["msg", "output", "Virtual-1", "mode", &mode_name])
-                    .output();
-                if out.is_err() || !out.as_ref().unwrap().status.success() {
-                    let _ = Command::new("niri")
-                        .args(["msg", "output", "Virtual-1", "custom-mode", &width.to_string(), &height.to_string(), &refresh_rate.to_string()])
-                        .output();
-                }
+
                 self.virtual_output_created = true;
                 true
             }
@@ -137,6 +137,37 @@ impl CompositorManager {
             }
         }
         self.virtual_output_created = false;
+    }
+
+    fn best_matching_mode(target_w: u32, target_h: u32) -> &'static str {
+        let standard_modes = [
+            (4096, 2160, "4096x2160@60.000000"),
+            (2560, 1600, "2560x1600@59.987000"),
+            (2048, 1152, "2048x1152@60.000000"),
+            (1920, 1200, "1920x1200@59.884998"),
+            (1920, 1080, "1920x1080@60.000000"),
+            (1600, 1200, "1600x1200@60.000000"),
+            (1680, 1050, "1680x1050@59.953999"),
+            (1440, 900, "1440x900@59.887001"),
+            (1280, 800, "1280x800@59.810001"),
+            (1280, 720, "1280x720@60.000000"),
+        ];
+
+        let target_aspect = target_w as f32 / target_h as f32;
+        let mut best_mode = "1920x1080@60.000000";
+        let mut min_diff = f32::MAX;
+
+        for (w, h, mode_str) in standard_modes {
+            let aspect = w as f32 / h as f32;
+            let aspect_diff = (aspect - target_aspect).abs();
+            let res_diff = ((w as f32 - target_w as f32).abs() + (h as f32 - target_h as f32).abs()) / 1000.0;
+            let total_score = aspect_diff * 2.0 + res_diff;
+            if total_score < min_diff {
+                min_diff = total_score;
+                best_mode = mode_str;
+            }
+        }
+        best_mode
     }
 }
 
