@@ -183,13 +183,16 @@ impl VideoStreamer {
             if has_intel_vaapi {
                 info!("Launching Intel VA-API Low-Power Zero-Copy Hardware Streamer (Device: /dev/dri/renderD128 @ {} FPS, {} kbps)", self.config.fps, self.config.bitrate_kbps);
                 cmd.arg("-d").arg("/dev/dri/renderD128")
-                   .arg("-c").arg("h264_vaapi");
+                   .arg("-c").arg("h264_vaapi")
+                   .arg("-p").arg("bframes=0")
+                   .arg("-p").arg(format!("gop_size={}", self.config.fps));
             } else {
                 info!("Launching NVIDIA NVENC Hardware Streamer (output: '{}' @ {} FPS, {} kbps)", output_target, self.config.fps, self.config.bitrate_kbps);
                 cmd.arg("-c").arg("h264_nvenc")
                    .arg("-p").arg("preset=p1")
                    .arg("-p").arg("tune=ull")
                    .arg("-p").arg("rc=vbr")
+                   .arg("-p").arg("bframes=0")
                    .arg("-p").arg("pix_fmt=yuv420p");
             }
 
