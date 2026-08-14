@@ -34,7 +34,7 @@ impl Default for StreamConfig {
 }
 
 pub struct VideoStreamer {
-    config: StreamConfig,
+    pub config: StreamConfig,
     child_process: Option<Child>,
     is_running: Arc<AtomicBool>,
 }

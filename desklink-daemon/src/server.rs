@@ -82,18 +82,27 @@ impl DeskLinkServer {
                         );
                     }
 
-                    // Ensure video stream is started
-                    self.ensure_streamer_running().await;
-
                     let video_rx = self.video_sender.subscribe();
                     let touch_tx = self.touch_sender.clone();
                     let active_clients = self.active_clients.clone();
                     let streamer_mutex = self.streamer.clone();
                     let compositor_mutex = self.compositor.clone();
+                    let video_sender = self.video_sender.clone();
+                    let base_config = self.stream_config.clone();
 
                     let compositor_clone = self.compositor.clone();
+                    let streamer_clone = self.streamer.clone();
                     tokio::spawn(async move {
-                        Self::handle_client(socket, peer_addr, video_rx, touch_tx, compositor_clone).await;
+                        Self::handle_client(
+                            socket,
+                            peer_addr,
+                            video_rx,
+                            touch_tx,
+                            compositor_clone,
+                            streamer_clone,
+                            video_sender,
+                            base_config,
+                        ).await;
                         let count = active_clients.fetch_sub(1, Ordering::SeqCst) - 1;
                         info!("DeskLink Client {} disconnected. Active clients: {}", peer_addr, count);
                         if count == 0 {
@@ -113,12 +122,30 @@ impl DeskLinkServer {
         }
     }
 
-    async fn ensure_streamer_running(&self) {
+    async fn ensure_streamer_running_with_resolution(
+        &self,
+        width: u32,
+        height: u32,
+        fps: u32,
+    ) {
         let mut streamer_guard = self.streamer.lock().await;
-        if streamer_guard.is_none() {
-            let mut streamer = VideoStreamer::new(self.stream_config.clone());
+        let needs_restart = match *streamer_guard {
+            Some(ref s) => s.config.width != width || s.config.height != height,
+            None => true,
+        };
+
+        if needs_restart {
+            if let Some(mut old) = streamer_guard.take() {
+                info!("Restarting video streamer to match client resolution ({}x{})...", width, height);
+                old.stop();
+            }
+            let mut cfg = self.stream_config.clone();
+            cfg.width = width;
+            cfg.height = height;
+            cfg.fps = fps.min(60); // Cap at 60 FPS default for cool thermals
+            let mut streamer = VideoStreamer::new(cfg);
             if let Err(e) = streamer.start(self.video_sender.clone()) {
-                error!("Failed to start GStreamer video pipeline: {:?}", e);
+                error!("Failed to start video streamer: {:?}", e);
             } else {
                 *streamer_guard = Some(streamer);
             }
@@ -131,6 +158,9 @@ impl DeskLinkServer {
         mut video_rx: broadcast::Receiver<Vec<u8>>,
         touch_tx: mpsc::Sender<TouchEvent>,
         compositor: Arc<Mutex<CompositorManager>>,
+        streamer: Arc<Mutex<Option<VideoStreamer>>>,
+        video_sender: broadcast::Sender<Vec<u8>>,
+        base_config: StreamConfig,
     ) {
         let (mut reader, mut writer) = socket.into_split();
 
@@ -146,6 +176,7 @@ impl DeskLinkServer {
 
         // Task 2: Receive Touch and Config packets (Client -> Host)
         let compositor_clone = compositor.clone();
+        let streamer_clone = streamer.clone();
         let touch_task = tokio::spawn(async move {
             let mut buf = [0u8; TOUCH_PACKET_SIZE];
             loop {
@@ -154,7 +185,7 @@ impl DeskLinkServer {
                         if buf[0] == crate::protocol::EVENT_TYPE_CONFIG {
                             if let Ok(config) = crate::protocol::ClientConfigEvent::decode(&buf) {
                                 info!(
-                                    "Received device display handshake: {}x{} @ {}Hz (Aspect Ratio: {:.2}:1)",
+                                    "Received device native resolution handshake: {}x{} @ {}Hz (Aspect Ratio: {:.2}:1)",
                                     config.width,
                                     config.height,
                                     config.fps,
@@ -164,6 +195,22 @@ impl DeskLinkServer {
                                     .lock()
                                     .await
                                     .create_virtual_output(config.width, config.height, config.fps);
+
+                                // Dynamically launch/restart streamer matching client native resolution
+                                let mut guard = streamer_clone.lock().await;
+                                if let Some(mut old) = guard.take() {
+                                    old.stop();
+                                }
+                                let mut new_cfg = base_config.clone();
+                                new_cfg.width = config.width;
+                                new_cfg.height = config.height;
+                                new_cfg.fps = config.fps.min(60);
+                                let mut new_streamer = VideoStreamer::new(new_cfg);
+                                if let Err(e) = new_streamer.start(video_sender.clone()) {
+                                    error!("Failed to start streamer for client resolution: {:?}", e);
+                                } else {
+                                    *guard = Some(new_streamer);
+                                }
                             }
                         } else {
                             match TouchEvent::decode(&buf) {

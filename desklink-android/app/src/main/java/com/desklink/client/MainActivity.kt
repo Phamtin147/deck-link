@@ -70,16 +70,26 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
     }
 
     private fun initStreamingPipeline(surface: Surface) {
-        val displayMetrics = resources.displayMetrics
-        val streamWidth = maxOf(displayMetrics.widthPixels, displayMetrics.heightPixels)
-        val streamHeight = minOf(displayMetrics.widthPixels, displayMetrics.heightPixels)
+        val (rawW, rawH) = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val bounds = windowManager.currentWindowMetrics.bounds
+            Pair(bounds.width(), bounds.height())
+        } else {
+            @Suppress("DEPRECATION")
+            val dm = android.util.DisplayMetrics()
+            @Suppress("DEPRECATION")
+            windowManager.defaultDisplay.getRealMetrics(dm)
+            Pair(dm.widthPixels, dm.heightPixels)
+        }
+
+        val streamWidth = maxOf(rawW, rawH)
+        val streamHeight = minOf(rawW, rawH)
         val refreshRate = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             display?.mode?.refreshRate?.toInt() ?: 60
         } else {
             @Suppress("DEPRECATION")
             windowManager.defaultDisplay.refreshRate.toInt()
         }
-        val densityDpi = displayMetrics.densityDpi
+        val densityDpi = resources.displayMetrics.densityDpi
 
         decoder = LowLatencyDecoder(streamWidth, streamHeight) { _ ->
             // Optional latency telemetry callback
