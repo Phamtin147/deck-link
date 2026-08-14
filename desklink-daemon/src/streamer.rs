@@ -177,7 +177,8 @@ impl VideoStreamer {
             let has_intel_vaapi = std::path::Path::new("/dev/dri/renderD128").exists();
 
             let mut cmd = Command::new("wf-recorder");
-            cmd.arg("-o").arg(output_target);
+            cmd.arg("-D")
+               .arg("-o").arg(output_target);
 
             if has_intel_vaapi {
                 info!("Launching Intel VA-API Low-Power Zero-Copy Hardware Streamer (Device: /dev/dri/renderD128 @ {} FPS, {} kbps)", self.config.fps, self.config.bitrate_kbps);
