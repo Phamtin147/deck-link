@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=DeskLink Host
+Comment=Ultra-Low Latency USB Secondary Display for Android
+Exec=/home/amtia/Projects/clone-spacedeck/scripts/desklink-ctl.sh start
+Icon=video-display
+Terminal=false
+Type=Application
+Categories=Utility;HardwareSettings;
+Keywords=display;monitor;screen;spacedeck;virtual;
