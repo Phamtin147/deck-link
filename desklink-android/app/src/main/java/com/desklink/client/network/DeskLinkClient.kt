@@ -60,7 +60,6 @@ class DeskLinkClient(
 
                     // Launch touch sender job
                     val senderJob = launch {
-                        val flushBuffer = ByteArray(DeskLinkProtocol.TOUCH_PACKET_SIZE)
                         while (isActive && !socket.isClosed) {
                             val packet = outgoingQueue.take()
                             try {

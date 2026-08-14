@@ -19,8 +19,10 @@ android {
 
     signingConfigs {
         create("release") {
-            // Default signing for direct installation
-            initWith(getByName("debug"))
+            storeFile = file("desklink.keystore")
+            storePassword = "android"
+            keyAlias = "desklink"
+            keyPassword = "android"
         }
     }
 
@@ -35,6 +37,7 @@ android {
         }
         debug {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 

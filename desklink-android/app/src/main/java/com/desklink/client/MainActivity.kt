@@ -62,7 +62,7 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
     }
 
     private fun initStreamingPipeline(surface: Surface) {
-        decoder = LowLatencyDecoder(1920, 1080) { latencyMs ->
+        decoder = LowLatencyDecoder(1920, 1080) { _ ->
             // Optional latency telemetry callback
         }
         decoder?.start(surface)
