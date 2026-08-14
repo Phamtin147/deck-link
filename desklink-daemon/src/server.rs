@@ -1,3 +1,4 @@
+use crate::compositor::CompositorManager;
 use crate::protocol::{TouchEvent, TOUCH_PACKET_SIZE};
 use crate::streamer::{StreamConfig, VideoStreamer};
 use crate::uinput::VirtualTouchscreen;
@@ -17,12 +18,13 @@ pub struct DeskLinkServer {
     video_sender: broadcast::Sender<Vec<u8>>,
     active_clients: Arc<AtomicUsize>,
     streamer: Arc<Mutex<Option<VideoStreamer>>>,
+    compositor: Arc<Mutex<CompositorManager>>,
     uinput_width: u32,
     uinput_height: u32,
 }
 
 impl DeskLinkServer {
-    pub fn new(bind_addr: String, stream_config: StreamConfig) -> Self {
+    pub fn new(bind_addr: String, stream_config: StreamConfig, compositor: CompositorManager) -> Self {
         let (touch_tx, touch_rx) = mpsc::channel::<TouchEvent>(256);
         let (video_tx, _) = broadcast::channel::<Vec<u8>>(16);
         let width = stream_config.width;
@@ -36,12 +38,16 @@ impl DeskLinkServer {
             video_sender: video_tx,
             active_clients: Arc::new(AtomicUsize::new(0)),
             streamer: Arc::new(Mutex::new(None)),
+            compositor: Arc::new(Mutex::new(compositor)),
             uinput_width: width,
             uinput_height: height,
         }
     }
 
     pub async fn run(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        // Ensure virtual display is OFF initially until a client connects
+        self.compositor.lock().await.destroy_virtual_output();
+
         // 1. Start uinput handler task
         let touch_rx = self.touch_receiver.clone();
         let width = self.uinput_width;
@@ -65,7 +71,16 @@ impl DeskLinkServer {
             match listener.accept().await {
                 Ok((socket, peer_addr)) => {
                     info!("DeskLink Client connected from: {}", peer_addr);
-                    self.active_clients.fetch_add(1, Ordering::SeqCst);
+                    let count = self.active_clients.fetch_add(1, Ordering::SeqCst) + 1;
+
+                    // Automatically enable virtual output on client connect
+                    if count == 1 {
+                        self.compositor.lock().await.create_virtual_output(
+                            self.stream_config.width,
+                            self.stream_config.height,
+                            self.stream_config.fps,
+                        );
+                    }
 
                     // Ensure video stream is started
                     self.ensure_streamer_running().await;
@@ -74,17 +89,19 @@ impl DeskLinkServer {
                     let touch_tx = self.touch_sender.clone();
                     let active_clients = self.active_clients.clone();
                     let streamer_mutex = self.streamer.clone();
+                    let compositor_mutex = self.compositor.clone();
 
                     tokio::spawn(async move {
                         Self::handle_client(socket, peer_addr, video_rx, touch_tx).await;
                         let count = active_clients.fetch_sub(1, Ordering::SeqCst) - 1;
                         info!("DeskLink Client {} disconnected. Active clients: {}", peer_addr, count);
                         if count == 0 {
-                            info!("No active clients. Pausing video stream to save GPU resources.");
+                            info!("No active clients. Pausing video stream and disabling virtual display.");
                             let mut streamer_guard = streamer_mutex.lock().await;
                             if let Some(mut streamer) = streamer_guard.take() {
                                 streamer.stop();
                             }
+                            compositor_mutex.lock().await.destroy_virtual_output();
                         }
                     });
                 }

@@ -82,13 +82,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     info!(" Ultra-Low Latency USB Secondary Display (<8ms Target)");
     info!("===========================================================");
 
-    // 1. Virtual Output Management
-    let mut compositor = CompositorManager::new();
-    if args.virtual_output {
-        compositor.create_virtual_output(args.width, args.height, args.fps);
-    }
+    // 1. Initialize Compositor Management
+    let compositor = CompositorManager::new();
 
-    // 2. ADB Forwarding
+    // 2. ADB Reverse Port Forwarding
     let adb = AdbManager::new(args.port, !args.no_adb);
     adb.setup_forwarding().await;
     adb.start_watch_loop().await;
@@ -104,9 +101,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         test_pattern: args.test_pattern,
     };
 
-    // 4. Start TCP Server
+    // 4. Start TCP Server (manages virtual display on-demand per connection)
     let bind_addr = format!("{}:{}", args.bind, args.port);
-    let server = DeskLinkServer::new(bind_addr, stream_config);
+    let server = DeskLinkServer::new(bind_addr, stream_config, compositor);
 
     server.run().await?;
 
