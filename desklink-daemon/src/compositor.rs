@@ -74,9 +74,15 @@ impl CompositorManager {
                 let _ = Command::new("niri")
                     .args(["msg", "output", "Virtual-1", "on"])
                     .output();
-                let _ = Command::new("niri")
-                    .args(["msg", "output", "Virtual-1", "mode", "1920x1080@60.000"])
+                let mode_name = format!("{}x{}@{}.000", width, height, refresh_rate);
+                let out = Command::new("niri")
+                    .args(["msg", "output", "Virtual-1", "mode", &mode_name])
                     .output();
+                if out.is_err() || !out.as_ref().unwrap().status.success() {
+                    let _ = Command::new("niri")
+                        .args(["msg", "output", "Virtual-1", "custom-mode", &width.to_string(), &height.to_string(), &refresh_rate.to_string()])
+                        .output();
+                }
                 self.virtual_output_created = true;
                 true
             }

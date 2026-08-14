@@ -25,7 +25,7 @@ impl Default for StreamConfig {
             width: 1920,
             height: 1080,
             fps: 60,
-            bitrate_kbps: 15000, // 15 Mbps CBR
+            bitrate_kbps: 8000, // 8 Mbps optimized for high quality & cool thermals
             encoder_choice: None,
             custom_pipeline: None,
             test_pattern: false,
@@ -174,7 +174,7 @@ impl VideoStreamer {
 
         let mut child = if is_wayland && has_wf_recorder && !self.config.test_pattern {
             let output_target = "Virtual-1";
-            info!("Launching native Wayland screencopy streamer: wf-recorder for output '{}' (NVENC H.264 @ {} FPS)", output_target, self.config.fps);
+            info!("Launching native Wayland screencopy streamer: wf-recorder for output '{}' (NVENC H.264 @ {} FPS, {} kbps)", output_target, self.config.fps, self.config.bitrate_kbps);
             Command::new("wf-recorder")
                 .arg("-o")
                 .arg(output_target)
@@ -185,6 +185,10 @@ impl VideoStreamer {
                 .arg("preset=p1")
                 .arg("-p")
                 .arg("tune=ull")
+                .arg("-p")
+                .arg("rc=vbr")
+                .arg("-p")
+                .arg("pix_fmt=yuv420p")
                 .arg("-p")
                 .arg(format!("b={}k", self.config.bitrate_kbps))
                 .arg("--muxer=h264")
@@ -212,6 +216,7 @@ impl VideoStreamer {
         tokio::spawn(async move {
             let mut read_buf = vec![0u8; 65536];
             let mut stream_buf = Vec::with_capacity(524288);
+            let mut cursor = 0usize;
 
             while is_running.load(Ordering::SeqCst) {
                 match stdout.read(&mut read_buf).await {
@@ -222,8 +227,8 @@ impl VideoStreamer {
                     Ok(n) => {
                         stream_buf.extend_from_slice(&read_buf[..n]);
 
-                        // Parse Annex-B NALUs / Access Units
-                        while let Some((start, end)) = Self::find_nalu_range(&stream_buf) {
+                        // Parse Annex-B NALUs with sliding cursor (avoids heavy memmoves)
+                        while let Some((start, end)) = Self::find_nalu_range_at(&stream_buf, cursor) {
                             let nalu_bytes = &stream_buf[start..end];
                             let payload_len = nalu_bytes.len() as u32;
 
@@ -242,12 +247,17 @@ impl VideoStreamer {
 
                             let _ = sender.send(packet);
 
-                            // Drain processed bytes
-                            stream_buf.drain(..end);
+                            cursor = end;
+                        }
+
+                        // Compact buffer only when cursor is sufficiently ahead
+                        if cursor > 131072 {
+                            stream_buf.drain(..cursor);
+                            cursor = 0;
                         }
                     }
                     Err(e) => {
-                        error!("Error reading from GStreamer stdout: {:?}", e);
+                        error!("Error reading from video stream: {:?}", e);
                         break;
                     }
                 }
@@ -260,12 +270,12 @@ impl VideoStreamer {
         Ok(())
     }
 
-    fn find_nalu_range(buf: &[u8]) -> Option<(usize, usize)> {
-        if buf.len() < 8 {
+    fn find_nalu_range_at(buf: &[u8], offset: usize) -> Option<(usize, usize)> {
+        if offset + 8 > buf.len() {
             return None;
         }
 
-        let first_start = Self::find_start_code(buf, 0)?;
+        let first_start = Self::find_start_code(buf, offset)?;
         let next_start_search = if buf[first_start..].starts_with(&[0, 0, 0, 1]) {
             first_start + 4
         } else {
@@ -281,6 +291,10 @@ impl VideoStreamer {
         } else {
             None
         }
+    }
+
+    fn find_nalu_range(buf: &[u8]) -> Option<(usize, usize)> {
+        Self::find_nalu_range_at(buf, 0)
     }
 
     fn find_start_code(buf: &[u8], offset: usize) -> Option<usize> {
